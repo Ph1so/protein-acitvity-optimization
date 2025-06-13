@@ -1,1 +1,1 @@
-Baysian Optimization for Octet using Hamilton START, Retisoft FLEX, and RH16
+Baysian Optimization for Octet using Hamilton STAR, Retisoft FLEX, and RH16
