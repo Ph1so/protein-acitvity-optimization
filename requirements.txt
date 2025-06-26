@@ -2,3 +2,5 @@ ax-platform
 flask
 scikit-optimize
 numpy
+matplotlib
+requests
