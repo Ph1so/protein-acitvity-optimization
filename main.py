@@ -47,6 +47,7 @@ class Config:
     REPORT_PATH: str = "report.txt"
     PUBLIC_DIR: str = r"C:\Users\Public"
     SUBDIR_NAME: str = "Public BayesianOpt"
+    EXPERIMENTS_DIR: str = "experiments"
     
     # Optimization settings
     TOTAL_TRIALS: int = 50
@@ -348,14 +349,20 @@ class AssayOptimizer:
         
         print(f"Optimization plot saved as: {plot_path}")
     
-    def save_results(self, experiment, model, best_parameters: Dict, best_values: Dict) -> str:
-        """Save optimization results to files."""
+    def save_results(self, experiment, model, best_parameters: Dict, best_values: Dict) -> Tuple[str, Path]:
+        """Save optimization results to files and return timestamp and directory."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
+        # Prepare directory
+        base_dir = Path(self.config.EXPERIMENTS_DIR)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = base_dir / timestamp
+        run_dir.mkdir(parents=True, exist_ok=True)
+
         # Save experiment as JSON
-        experiment_file = f"experiment_{timestamp}.json"
-        save_experiment(experiment, experiment_file)
-        
+        experiment_file = run_dir / f"experiment_{timestamp}.json"
+        save_experiment(experiment, str(experiment_file))
+
         # Save complete results as pickle
         save_data = {
             'experiment': experiment,
@@ -366,11 +373,11 @@ class AssayOptimizer:
             'timestamp': timestamp,
             'config': self.config
         }
-        
-        pickle_file = f"complete_optimization_{timestamp}.pkl"
+
+        pickle_file = run_dir / f"complete_optimization_{timestamp}.pkl"
         with open(pickle_file, "wb") as f:
             pickle.dump(save_data, f)
-        
+
         # Append results to report
         with open(self.config.REPORT_PATH, "a", encoding="utf-8") as f:
             f.write(f"\n{'='*50}\n")
@@ -380,8 +387,8 @@ class AssayOptimizer:
             f.write(f"Best Value: {best_values}\n")
             f.write(f"Files saved: {experiment_file}, {pickle_file}\n")
             f.write(f"{'='*50}\n")
-        
-        return timestamp
+
+        return timestamp, run_dir
     
     def get_parameter_config(self) -> List[Dict]:
         """Get parameter configuration for optimization."""
@@ -420,10 +427,11 @@ class AssayOptimizer:
         )
         
         # Save results
-        timestamp = self.save_results(experiment, model, best_parameters, best_values)
-        
+        timestamp, run_dir = self.save_results(experiment, model, best_parameters, best_values)
+
         # Plot results
-        self.plot_optimization_results(experiment, f"bo_plot_{timestamp}")
+        plot_prefix = run_dir / f"bo_plot_{timestamp}"
+        self.plot_optimization_results(experiment, str(plot_prefix))
         
         # Print final results
         print(f"\nOptimization completed successfully!")
