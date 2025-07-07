@@ -1,6 +1,4 @@
-ax-platform
 flask
-scikit-optimize
-numpy
-matplotlib
 requests
+ax-platform
+matplotlib
