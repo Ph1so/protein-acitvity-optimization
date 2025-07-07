@@ -5,7 +5,10 @@ import pytz
 import threading
 import pickle
 import math
+import time
 import matplotlib.pyplot as plt
+import os
+import json
 
 from ax.service.managed_loop import optimize
 from ax.storage.json_store.load import load_experiment
@@ -18,12 +21,37 @@ READ_PATH = ""
 REPORT_PATH = "report.txt"
 TRIAL = 1
 TESTING = True
+SESSION_ID = None
 
 est = pytz.timezone("US/Eastern")
 
 @app.route("/test", methods=["GET"])
 def test():
     return jsonify({"result:": "test"})
+
+def connect_genera():
+    global SESSION_ID
+
+    data = {
+        "username": "admin",
+        "password": "genera"
+    }
+
+    headers = {
+        "accept": "*/*",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post("http://192.168.0.101:8086/genera/login", json=data, headers=headers)
+    
+    # Extract session ID from Set-Cookie header
+    cookie_header = response.headers.get("Set-Cookie", "")
+    if "session=" in cookie_header:
+        SESSION_ID = cookie_header.split("session=")[1].split(";")[0]
+        print(f"Session ID stored: {SESSION_ID}")
+    else:
+        raise ValueError("Session ID not found in response headers")
+
 
 def plot_optimization_results(experiment, filename_prefix="bo_plot"):
     trial_indices = []
@@ -130,17 +158,68 @@ def get_read_file(filepath: str, pH: float, enzyme_conc: float, incubation_time:
 
 def run_assay(pH: float, enzyme_conc: float, incubation_time: float):    
     if not TESTING:
-        response = requests.get(GENERA_IP, params={
-            "pH": pH,
-            "enzyme_conc": enzyme_conc,
-            "incubation_time": incubation_time,
-        })
+        # TODO: set params
 
-        finished = False
-        while not finished:
-            response = requests.get(GENERA_IP + "/get_status")
-            if response["status"] == "true":
-                finished = True
+        # Get the path to the Public folder
+        public_dir = r"C:\Users\Public"
+        subdir = os.path.join(public_dir, "Public BayesianOpt")
+        os.makedirs(subdir, exist_ok=True)
+
+        # Data to write
+        data = {
+            "pH": 1,
+            "enzyme_conc": 2,
+            "incubation_time": 3
+        }
+
+        # File path
+        file_path = os.path.join(subdir, "params.json")
+
+        # Write JSON to file
+        with open(file_path, "w") as f:
+            json.dump(data, f, indent=4)  # `indent=4` makes it nicely formatted
+
+        # Request Genera to run move_plate2 process
+        process = {
+            "processId": "C:\\retisoft\\genera\\processes\\move_plate2.process",
+            "name": "move_plate2",
+            "batchCount": 1,
+            "priority": 1
+        }
+
+        headers = {
+            "accept": "application/json",
+            "cookie": f"session={SESSION_ID}"
+        }
+
+        response = requests.post("http://192.168.0.101:8086/genera/scheduler/process-tasks", json = process, headers=headers)
+
+        try:
+            response_data = response.json()
+            print("Process Submission Response:", response_data)
+            
+            # Safely extract ID
+            process_id = response_data.get("id")
+            if process_id is None:
+                raise ValueError("Process ID not found in response.")
+        except ValueError as ve:
+            print("Error:", ve)
+            exit(1)
+        except Exception as e:
+            print("Unexpected error:", e)
+            exit(1)
+
+        headers = {
+            "cookie": f"session={SESSION_ID}"
+        }
+        print(process_id)
+        state = ""
+
+        while state != "FINISHED":
+            response = requests.get(f"http://192.168.0.101:8086/genera/scheduler/process-tasks/{process_id}/state", headers=headers)
+            state = response.text[1:-1]
+            print(state)
+            time.sleep(2)
     
     return get_read_file(READ_PATH, pH, enzyme_conc, incubation_time)
 
@@ -195,11 +274,12 @@ def main():
     plot_optimization_results(experiment, filename_prefix=f"bo_plot_{timestamp}")
 
 if __name__ == "__main__":
-    app.run(host = "192.168.0.102", port = 8000)
+    # app.run(host = "192.168.0.102", port = 8000)
     # Start Flask server in a separate thread
     # flask_thread = threading.Thread(target=lambda: app.run(host="192.168.0.102", port=8000))
     # flask_thread.daemon = True  # Dies when main program exits
     # flask_thread.start()
     
     # Now run your optimization
-    # main()
+    connect_genera()
+    main()
